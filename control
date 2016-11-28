@@ -6,6 +6,39 @@ TEST_TYPE = "CLIENT"
 # timeout in seconds
 TIMEOUT = 60 * 60 * 4  # 4 hours, divided among each subtest step
 
+# Command and Logfile configuration for while job and per-subtest
+SYSINFOS = {
+    "job": {
+        "commands": [
+            {"command": "dmesg", "logfile": "job_dmesg"},
+            {"command": "rpm -q docker", "logfile": "docker_rpm"},
+            {"command": "rpm -q docker-latest",
+             "logfile": "docker-latest_rpm"}
+        ],
+        "logfiles": [
+            "/var/log/messages",
+            "/var/log/audit/audit.log",
+            "/etc/sysconfig/docker",
+            "/etc/sysconfig/docker-network",
+            "/etc/sysconfig/docker-storage",
+            "/etc/sysconfig/docker-storage-setup"
+        ],
+    },
+    "subtest": {
+        "commands": [
+            {"command": "dmesg", "logfile": "subtest_dmesg"}
+        ],
+        "logfiles": [
+            "/var/log/messages",
+            "/var/log/audit/audit.log",
+            "/etc/sysconfig/docker",
+            "/etc/sysconfig/docker-network",
+            "/etc/sysconfig/docker-storage",
+            "/etc/sysconfig/docker-storage-setup"
+        ]
+    }
+}
+
 import sys
 import os
 import re
@@ -57,7 +90,7 @@ def subtests_subsubtests(subthing_set, subtest_modules):
     subtest_to_subsubtest = {}
     for subthing in subthing_set:
         parent = subtest_of_subsubtest(subthing, subtest_modules)
-        if parent == None:
+        if parent is None:
             subtest = subthing
             subsubtest = set()
         else:
@@ -582,6 +615,25 @@ class StepInit(Context, collections.Callable):
         self.step_timeout = 0
         # This is incremented by steps, reset for execution
         self.index = 0
+        # Setup for job data collection, clear all defaults.
+        for item in [job.sysinfo.after_iteration_loggables,
+                     job.sysinfo.before_iteration_loggables,
+                     job.sysinfo.boot_loggables,
+                     job.sysinfo.test_loggables]:
+            item.clear()
+        for _type, items in SYSINFOS.items():
+            # Avoid calling private job._add_sysinfo_loggable()
+            if _type == 'job':
+                on_every_test = False
+            else:
+                on_every_test = True
+            for dargs in items.get('commands', []):
+                # Easier than dealing with parameter conflicts
+                dargs.update(dict(on_every_test=on_every_test))
+                job.add_sysinfo_command(**dargs)
+            for dargs in items.get('logfiles', []):
+                dargs.update(dict(on_every_test=on_every_test))
+                job.add_sysinfo_logfile(**dargs)
 
     def __call__(self):
         """
@@ -690,7 +742,6 @@ class StepInit(Context, collections.Callable):
         """
         return [subthing for subthing in subthings
                 if subthing in subtest_modules]
-
 
 # Entry point into step-engine, job searches for this callable
 step_init = StepInit()
