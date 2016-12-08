@@ -628,11 +628,11 @@ class StepInit(Context, collections.Callable):
             else:
                 on_every_test = True
             for dargs in items.get('commands', []):
-                # Easier than dealing with parameter conflicts
-                dargs.update(dict(on_every_test=on_every_test))
+                dargs.update({"on_every_test": on_every_test})
                 job.add_sysinfo_command(**dargs)
-            for dargs in items.get('logfiles', []):
-                dargs.update(dict(on_every_test=on_every_test))
+            for _string in items.get('logfiles', []):
+                dargs = {"file": _string,
+                         "on_every_test": on_every_test}
                 job.add_sysinfo_logfile(**dargs)
 
     def __call__(self):
