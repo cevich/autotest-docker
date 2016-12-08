@@ -621,19 +621,6 @@ class StepInit(Context, collections.Callable):
                      job.sysinfo.boot_loggables,
                      job.sysinfo.test_loggables]:
             item.clear()
-        for _type, items in SYSINFOS.items():
-            # Avoid calling private job._add_sysinfo_loggable()
-            if _type == 'job':
-                on_every_test = False
-            else:
-                on_every_test = True
-            for dargs in items.get('commands', []):
-                dargs.update({"on_every_test": on_every_test})
-                job.add_sysinfo_command(**dargs)
-            for _string in items.get('logfiles', []):
-                dargs = {"file": _string,
-                         "on_every_test": on_every_test}
-                job.add_sysinfo_logfile(**dargs)
 
     def __call__(self):
         """
@@ -742,6 +729,21 @@ class StepInit(Context, collections.Callable):
         """
         return [subthing for subthing in subthings
                 if subthing in subtest_modules]
+
+# Job-level sysinfos must be setup before steps initialized
+for _type, items in SYSINFOS.items():
+    # Avoid calling private job._add_sysinfo_loggable()
+    if _type == 'job':
+        on_every_test = False
+    else:
+        on_every_test = True
+    for _dargs in items.get('commands', []):
+        _dargs.update({"on_every_test": on_every_test})
+        job.add_sysinfo_command(**_dargs)
+    for _string in items.get('logfiles', []):
+        _dargs = {"file": _string,
+                  "on_every_test": on_every_test}
+        job.add_sysinfo_logfile(**_dargs)
 
 # Entry point into step-engine, job searches for this callable
 step_init = StepInit()
