@@ -14,6 +14,7 @@ import traceback
 from environment import docker_rpm
 from xceptions import DockerTestFail
 from xceptions import DockerTestNAError
+from xceptions import DockerTestError
 from config import get_as_list, CONFIGCUSTOMS
 
 
@@ -132,6 +133,9 @@ class SubBase(object):
         :returns: True/False if a match to active docker NVRA found
         :SideEffect: log warning messages to help human debuggers.
         """
+        if self.__class__.__name__ in ['Subtest', 'SubSubtest']:
+            raise DockerTestError('%s.is_known_failure() not yet supported',
+                                  self.__class__.__name__)
         # e.g. docker_cli/subtest/subsubtest
         fullname = os.path.join(self.config_section, subthingname)
         known = known_failures()
