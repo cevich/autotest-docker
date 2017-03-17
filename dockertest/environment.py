@@ -2,9 +2,6 @@
 
 """
 Low-level/standalone host-environment handling/checking utilities/classes/data
-
-:Note: This module must _NOT_ depend on anything in dockertest package or
-       in autotest!
 """
 
 import warnings
