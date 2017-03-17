@@ -369,7 +369,7 @@ def mustfail(cmdresult, expected_status=None, failmsg=None):
     if expected_status is None:                    # old: mustfail(x)
         expected_status = 1
     if isinstance(expected_status, basestring):    # old: mustfail(x, "msg")
-        if not expected_status.isdigit():     # pylint: disable=E1101
+        if not expected_status.isdigit():     # pylint: disable=E1101,E1103
             failmsg = expected_status
             expected_status = 1
 

@@ -18,7 +18,7 @@ then
     if grep -iq 'enterprise' '/etc/redhat-release' || \
        grep -iq 'centos' '/etc/redhat-release'
     then
-        SPECIALONE=",W0142"
+        SPECIALONE=",E0012,W0142"
     fi
 fi
 
