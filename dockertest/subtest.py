@@ -19,43 +19,14 @@ import copy
 from ConfigParser import Error
 from autotest.client.shared.error import TestError, TestNAError
 from autotest.client.shared.version import get_version
-from autotest.client import test, utils
+from autotest.client import test
 import version
 import config
 import subtestbase
-from docker_daemon import which_docker
 from xceptions import DockerTestFail
 from xceptions import DockerTestNAError
 from xceptions import DockerTestError
 from xceptions import DockerSubSubtestNAError
-
-
-def docker_rpm():
-    """
-    Returns the full NVRA of the currently-installed docker or docker-latest
-    """
-    return utils.run("rpm -q %s" % which_docker()).stdout.strip()
-
-
-def known_failures():
-    """
-    Returns a dict containing known test failures. Primary key is
-    subtest name (e.g. docker_cli/foo/bar), value is another dict
-    whose key is docker NVRA (e.g. docker-1.12.5-8.el7.x86_64),
-    value of that is a string description of the problem (e.g.
-    a bz number and comment).
-    """
-    known = {}
-    import csv
-    path_known = os.path.join(config.CONFIGCUSTOMS, 'known_failures.csv')
-    with open(path_known, 'rb') as csv_fh:
-        csv_reader = csv.reader(csv_fh)
-        for row in csv_reader:
-            if row[1] not in known:
-                known[row[1]] = {}
-            # Each row is: NVR, subtest, description
-            known[row[1]][row[0]] = row[2]
-    return known
 
 
 class Subtest(subtestbase.SubBase, test.test):
@@ -468,50 +439,6 @@ class SubSubtestCaller(Subtest):
                 self.final_subsubtests.add(name)
             # cleanup() will still be called before this propagates
             raise exc_info[0], exc_info[1], exc_info[2]
-
-    def is_known_failure(self, subsubtestname):
-        """
-        Do we have a registered known failure in this subtest when running
-        on the currently-installed docker? Return True if so.
-        Side effect: log warning messages to help human debuggers.
-        """
-        # e.g. docker_cli/subtest/subsubtest
-        fullname = os.path.join(self.config_section, subsubtestname)
-        known = known_failures()
-        if fullname not in known:
-            return False
-        docker_nvr = docker_rpm()
-        if docker_nvr in known[fullname]:
-            why = known[fullname][docker_nvr]
-            self.logwarning("%s: Known failure on %s: %s",
-                            subsubtestname, docker_nvr, why)
-            return True
-
-        # This exact NVR is not known to fail. What about NV?
-        _nv = lambda nvr: nvr[:nvr.rfind('-')]
-        docker_nv = _nv(docker_nvr)
-        docker_nv_wild = docker_nv + '-*'
-        if docker_nv_wild in known[fullname]:
-            why = known[fullname][docker_nv_wild]
-            self.logwarning("%s expected to fail on all builds of %s: %s",
-                            subsubtestname, docker_nv, why)
-            return True
-
-        # No known failures for NVR or NV. What about other builds of same NV
-        # or a related one? These messages are informational only, intended
-        # as hints for a test engineer trying to understand new failures.
-        if docker_nv in [_nv(x) for x in known[fullname]]:
-            # e.g. docker is 1.12.5-6, we have an exception for 1.12.5->>5<<
-            self.logwarning("%s is known to fail in other %s builds",
-                            subsubtestname, docker_nv)
-        elif docker_nv.count('.') > 1:
-            _nv_base = lambda nv_orig: nv_orig[:nv_orig.rfind('.')]
-            docker_nv_base = _nv_base(docker_nv)
-            if docker_nv_base in [_nv_base(_nv(x)) for x in known[fullname]]:
-                # e.g. docker is 1.12.6-1, we have exception for 1.12.>>5<<-*
-                self.logwarning("%s is known to fail in other %s.x builds",
-                                subsubtestname, docker_nv_base)
-        return False
 
     def run_all_stages(self, name, subsubtest):
         """

@@ -7,11 +7,34 @@ modules.
 # Pylint runs from a different directory, it's fine to import this way
 # pylint: disable=W0403
 
+import os.path
+import csv
 import logging
 import traceback
+from environment import docker_rpm
 from xceptions import DockerTestFail
 from xceptions import DockerTestNAError
-from config import get_as_list
+from config import get_as_list, CONFIGCUSTOMS
+
+
+def known_failures():
+    """
+    Returns a dict containing known test failures. Primary key is
+    subtest name (e.g. docker_cli/foo/bar), value is another dict
+    whose key is docker NVRA (e.g. docker-1.12.5-8.el7.x86_64),
+    value of that is a string description of the problem (e.g.
+    a bz number and comment).
+    """
+    known = {}
+    path_known = os.path.join(CONFIGCUSTOMS, 'known_failures.csv')
+    with open(path_known, 'rb') as csv_fh:
+        csv_reader = csv.reader(csv_fh)
+        for row in csv_reader:
+            if row[1] not in known:
+                known[row[1]] = {}
+            # Each row is: NVR, subtest, description
+            known[row[1]][row[0]] = row[2]
+    return known
 
 
 class SubBase(object):
@@ -99,6 +122,53 @@ class SubBase(object):
         msg = self.step_log_msgs.get(stepname)
         if msg:
             self.loginfo(msg)
+
+    def is_known_failure(self, subthingname):
+        """
+        Do we have a registered known failure in this subtest/sub-subtest
+        when running on the currently-installed docker? Return True if so.
+
+        :param subthingname: Subtest/sub-subtest name to search for
+        :returns: True/False if a match to active docker NVRA found
+        :SideEffect: log warning messages to help human debuggers.
+        """
+        # e.g. docker_cli/subtest/subsubtest
+        fullname = os.path.join(self.config_section, subthingname)
+        known = known_failures()
+        if fullname not in known:
+            return False
+        docker_nvr = docker_rpm()
+        if docker_nvr in known[fullname]:
+            why = known[fullname][docker_nvr]
+            self.logwarning("%s: Known failure on %s: %s",
+                            subthingname, docker_nvr, why)
+            return True
+
+        # This exact NVR is not known to fail. What about NV?
+        _nv = lambda nvr: nvr[:nvr.rfind('-')]
+        docker_nv = _nv(docker_nvr)
+        docker_nv_wild = docker_nv + '-*'
+        if docker_nv_wild in known[fullname]:
+            why = known[fullname][docker_nv_wild]
+            self.logwarning("%s expected to fail on all builds of %s: %s",
+                            subthingname, docker_nv, why)
+            return True
+
+        # No known failures for NVR or NV. What about other builds of same NV
+        # or a related one? These messages are informational only, intended
+        # as hints for a test engineer trying to understand new failures.
+        if docker_nv in [_nv(x) for x in known[fullname]]:
+            # e.g. docker is 1.12.5-6, we have an exception for 1.12.5->>5<<
+            self.logwarning("%s is known to fail in other %s builds",
+                            subthingname, docker_nv)
+        elif docker_nv.count('.') > 1:
+            _nv_base = lambda nv_orig: nv_orig[:nv_orig.rfind('.')]
+            docker_nv_base = _nv_base(docker_nv)
+            if docker_nv_base in [_nv_base(_nv(x)) for x in known[fullname]]:
+                # e.g. docker is 1.12.6-1, we have exception for 1.12.>>5<<-*
+                self.logwarning("%s is known to fail in other %s.x builds",
+                                subthingname, docker_nv_base)
+        return False
 
     @staticmethod
     def failif(condition, reason=None):

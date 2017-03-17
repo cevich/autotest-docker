@@ -28,6 +28,17 @@ def which_docker():
     return docker
 
 
+def docker_rpm():
+    """
+    Returns the full NVRA of the currently-installed docker or docker-latest
+    """
+    args = ["rpm", "-q", "%s" % which_docker()]
+    return subprocess.check_output(args,
+                                   shell=True,  # use PATH + any rpm macros
+                                   close_fds=True,  # for safety-sake
+                                   universal_newlines=True).strip()
+
+
 def set_selinux_context(path=None, context=None, recursive=True, pwd=None):
     """
     When selinux is enabled it sets the context by chcon -t ...
