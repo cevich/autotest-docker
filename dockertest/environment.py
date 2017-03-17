@@ -9,6 +9,25 @@ import subprocess
 import selinux
 
 
+def which_docker():
+    """
+    Returns 'docker' or 'docker-latest' based on setting in
+    /etc/sysconfig/docker.
+
+    Warning: this is not a reliable method. /etc/sysconfig/docker defines
+    the docker *client*; it is perfectly possible for a system to use
+    docker as client and docker-latest as daemon or vice-versa. It's
+    possible, but unsupported, so we're not going to worry about it.
+    """
+    docker = 'docker'
+    with open('/etc/sysconfig/docker', 'r') as docker_sysconfig:
+        for line in docker_sysconfig:
+            if line.startswith('DOCKERBINARY='):
+                if 'docker-latest' in line:
+                    docker = 'docker-latest'
+    return docker
+
+
 def set_selinux_context(path=None, context=None, recursive=True, pwd=None):
     """
     When selinux is enabled it sets the context by chcon -t ...

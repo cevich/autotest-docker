@@ -10,6 +10,7 @@ import socket
 import json
 import os
 from autotest.client import utils
+from environment import which_docker
 
 # File extension used for preserving original docker config file
 PRESERVED_EXTENSION = '.docker-autotest-preserved'
@@ -112,25 +113,6 @@ class SocketClient(ClientBase):
         return self.get_json("/version")
 
 # Group of utils for managing docker daemon service.
-
-
-def which_docker():
-    """
-    Returns 'docker' or 'docker-latest' based on setting in
-    /etc/sysconfig/docker.
-
-    Warning: this is not a reliable method. /etc/sysconfig/docker defines
-    the docker *client*; it is perfectly possible for a system to use
-    docker as client and docker-latest as daemon or vice-versa. It's
-    possible, but unsupported, so we're not going to worry about it.
-    """
-    docker = 'docker'
-    with open('/etc/sysconfig/docker', 'r') as docker_sysconfig:
-        for line in docker_sysconfig:
-            if line.startswith('DOCKERBINARY='):
-                if 'docker-latest' in line:
-                    docker = 'docker-latest'
-    return docker
 
 
 def _systemd_action(action):
