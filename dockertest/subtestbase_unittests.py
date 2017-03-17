@@ -5,7 +5,7 @@
 
 import os
 import sys
-from tempfile import mkstemp
+from tempfile import mkstemp, TemporaryFile
 import types
 from unittest2 import TestCase, main
 
@@ -48,43 +48,30 @@ setattr(mock('xceptions'), 'DockerTestNAError', DockerTestFail)
 # END   boilerplate crap needed for subtests, which should be refactored
 ###############################################################################
 
-# In each of these, the left-hand string(s) will be present at right.
-expect_pass = [
-    ['a',        'a'],
-    ['a',        'aa'],
-    ['a',        'abc'],
-    ['a',        'cba'],
-    ['a|a',      'a'],
-    ['a | a',    'a'],
-    ['string',   'ceci nest pas une string'],
-    ['no|yes',   'googlyeyes'],
-    ['no | yes', 'googlyeyes'],
-    ['needle',   'needle in a haystack'],
-    ['needle',   'haystack with a needle in the middle'],
-    ['needle',   'haystack with, at end, a needle'],
-]
 
-# The left-hand string(s) will NOT be in the right
-expect_fail = [
-    ['a',         'b'],
-    ['needle',    'haystack'],
-    ['a|b|c',     'd'],
-    ['a | b | c', 'd'],
-    ['a | a | a', 'b'],
-]
-
-
-class TestNotRedHat(TestCase):
+class SubtestBaseTestBase(TestCase):
+    """Common setup/teardown base class for other fixtures here"""
 
     def setUp(self):
+        super(SubtestBaseTestBase, self).setUp()
         import subtestbase
         self.subtestbase = subtestbase
+
         # Saves some typing
         self.stbsb = self.subtestbase.SubBase
+
+
+class TestNotRedHat(SubtestBaseTestBase):
+
+    def setUp(self):
+        super(TestNotRedHat, self).setUp()
         pfx = 'subtestbase_unitest'
         (fd,
          self.stbsb.redhat_release_filepath) = mkstemp(prefix=pfx)
         os.close(fd)
+
+    def tearDown(self):
+        os.unlink(self.stbsb.redhat_release_filepath)
 
     def test_failif_not_redhat(self):
         with open(self.stbsb.redhat_release_filepath, 'wb') as rhrel:
@@ -98,41 +85,87 @@ class TestNotRedHat(TestCase):
         self.assertEqual(self.stbsb.failif_not_redhat(DockerTestFail), None)
 
 
-class TestFailIfNotIn(TestCase):
+class TestFailIfNotIn(SubtestBaseTestBase):
     """
     Tests for failif_not_in()
     """
-    pass
+
+    # In each of these, the left-hand string(s) will be present at right.
+    expect_pass = [
+        ['a',        'a'],
+        ['a',        'aa'],
+        ['a',        'abc'],
+        ['a',        'cba'],
+        ['a|a',      'a'],
+        ['a | a',    'a'],
+        ['string',   'ceci nest pas une string'],
+        ['no|yes',   'googlyeyes'],
+        ['no | yes', 'googlyeyes'],
+        ['needle',   'needle in a haystack'],
+        ['needle',   'haystack with a needle in the middle'],
+        ['needle',   'haystack with, at end, a needle'],
+    ]
+
+    # The left-hand string(s) will NOT be in the right
+    expect_fail = [
+        ['a',         'b'],
+        ['needle',    'haystack'],
+        ['a|b|c',     'd'],
+        ['a | b | c', 'd'],
+        ['a | a | a', 'b'],
+    ]
+
+    def test_pass(self):
+        for needle, haystack in self.expect_pass:
+            # Automaticly shows needle & haystack in any failure message
+            with self.subTest(needle=needle, haystack=haystack):
+                result = self.stbsb.failif_not_in(needle, haystack)
+                self.assertIsNone(result)
+
+    def test_fail(self):
+        for needle, haystack in self.expect_fail:
+            with self.subTest(needle=needle, haystack=haystack):
+                self.assertRaises(DockerTestFail,
+                                  self.stbsb.failif_not_in,
+                                  needle, haystack)
 
 
-# Generate tests for each case:
-#  https://stackoverflow.com/questions/32899/how-to-generate-dynamic-parametrized-unit-tests-in-python
-def test_generator_pass(needle, haystack):
-    def test(self):
-        import subtestbase
-        subtestbase.SubBase.failif_not_in(needle, haystack)
-    return test
+class TestKnownFailures(SubtestBaseTestBase):
+    """Tests known_failures() and SubBase.is_known_failure()"""
 
+    def setUp(self):
+        super(TestKnownFailures, self).setUp()
+        self.tmpfile = None
+        self.fake_open = lambda *args, **dargs: self.tmpfile
+        self.subtestbase.open = self.fake_open
 
-def test_generator_fail(needle, haystack):
-    def test(self):
-        import subtestbase
-        self.assertRaises(DockerTestFail,
-                          subtestbase.SubBase.failif_not_in,
-                          needle, haystack)
-    return test
+        self.docker_rpm = 'docker'
+        self.subtestbase.docker_rpm = lambda: self.docker_rpm
+
+    def tearDown(self):
+        # Don't let mocks or state leak anywhere
+        del self.subtestbase.open
+        del self.subtestbase.docker_rpm  
+        del self.subtestbase
+        super(SubtestBaseTestBase, self).tearDown()
+
+    def reset_tmpfile(self, contents=None):
+        self.tmpfile = TemporaryFile()
+        if contents:
+            self.tmpfile.write(contents)
+            self.tmpfile.seek(0,0)
+
+    def test_empty_known_failures(self):
+        self.reset_tmpfile()
+        known = self.subtestbase.known_failures()
+        self.assertEqual(known, {})
+
+    def test_known_failures(self):
+        self.reset_tmpfile('"one","two","three"\n')
+        known = self.subtestbase.known_failures()
+        self.assertIn('two', known)
+        self.assertEqual(known['two'], {'one': 'three'})
+
 
 if __name__ == '__main__':
-    for t in expect_pass:
-        test_name = filter(lambda c: c.isalpha() or c == '_',
-                           'test_%s__in__%s' % (t[0], t[1]))
-        test_ref = test_generator_pass(t[0], t[1])
-        setattr(TestFailIfNotIn, test_name, test_ref)
-
-    for t in expect_fail:
-        test_name = filter(lambda c: c.isalpha() or c == '_',
-                           'test_%s__not_in__%s' % (t[0], t[1]))
-        test_ref = test_generator_fail(t[0], t[1])
-        setattr(TestFailIfNotIn, test_name, test_ref)
-
     main()
