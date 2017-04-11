@@ -56,8 +56,9 @@ class info(subtest.Subtest):
         outputgood = OutputGood(self.stuff['cmdresult'])
         info_map = self._build_table(outputgood.stdout_strip)
         # Verify some individual items
-        self.failif_ne(info_map['Storage Driver'].lower(), 'devicemapper',
-                       'Storage Driver')
+        self.failif_not_in(self.config['storage_drivers'],
+                           info_map['Storage Driver'].lower(),
+                           'Storage Driver')
         self.failif_ne(info_map['Data file'].lower(), '',
                        'Data file')
         self.failif_ne(info_map['Metadata file'].lower(), '',
