@@ -39,7 +39,7 @@ class log_versions(subtest.Subtest):
         self.write_sysinfo('docker_rpm_active', self._rpmq(which_docker()))
         self.write_sysinfo('docker_rpm_current', self._rpmq('docker'))
         self.write_sysinfo('docker_rpm_latest', self._rpmq('docker-latest'))
-        for rpm in get_as_list(self.config.get(key_rpms, '')):
+        for rpm in get_as_list(self.config.get('key_rpms', '')):
             self.write_sysinfo('key_rpms', self._rpmq(rpm))
 
     def write_sysinfo(self, filename, content):
