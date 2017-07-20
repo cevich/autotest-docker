@@ -126,6 +126,7 @@ class DockerVersionTest(unittest.TestCase):
     def setUp(self):
         import output
         self.output = output
+        self.output.DockerVersion.flush_cache()
 
     def test_client(self):
         version_string = ("Client version: 0.9.0\n"

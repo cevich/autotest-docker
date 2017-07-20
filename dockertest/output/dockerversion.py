@@ -17,20 +17,31 @@ class DockerVersion(object):
     """
     Parser of docker-cli version command output as client/server properties
 
+    :**N/B**: Neither class nor instances are thread-safe.
     :param version_string: Raw, possibly empty or multi-line output
                            from docker version command.
     """
+
     #: Raw, possibly empty or multi-line output from docker version command.
     #: Read-only, set in __init__
     version_string = None
-    #: Various cache's for properties (do not use)
-    _client = None
-    _server = None
-    _client_lines = None
-    _server_lines = None
-    _client_info = None
-    _server_info = None
-    _has_distinct_exit_codes = None
+
+    #: Various cache's for properties (private)
+    _cache = None
+
+    def __new__(cls, version_string=None, docker_path=None):
+        del version_string  # not used
+        del docker_path
+        if not cls._cache:
+            cls._cache = dict(
+                client=None,
+                server=None,
+                client_lines=None,
+                server_lines=None,
+                client_info=None,
+                server_info=None,
+                has_distinct_exit_codes=None)
+        return super(cls, DockerVersion).__new__(cls)
 
     def __init__(self, version_string=None, docker_path=None):
         # If called without an explicit version string, run docker to find out
@@ -41,7 +52,14 @@ class DockerVersion(object):
                                                      shell=True,
                                                      close_fds=True)
         self.version_string = version_string
-        # FIXME: This should call super(...).__init__(...) (my bad)
+        super(DockerVersion, self).__init__()
+
+    @classmethod
+    def flush_cache(cls):
+        """
+        Wipe out any existing cached data for all instances
+        """
+        cls._cache = None
 
     def _oops(self, what):
         raise DockerOutputError("Couldn't parse %s from %s" %
@@ -49,31 +67,31 @@ class DockerVersion(object):
 
     # This is old code, not updating to preserve old behavior
     def _old_client(self):
-        if self._client is None:
+        if self._cache['client'] is None:
             regex = re.compile(r'Client\s+version:\s+(\d+\.\d+\.\d+\S*)',
                                re.IGNORECASE)
             mobj = None
             for line in self.version_lines:
                 mobj = regex.search(line.strip())
                 if bool(mobj):
-                    self._client = mobj.group(1)
-        if self._client is None:
+                    self._cache['client'] = mobj.group(1)
+        if self._cache['client'] is None:
             self._oops('client version')
-        return self._client
+        return self._cache['client']
 
     # This is old code, not updating to preserve old behavior
     def _old_server(self):
-        if self._server is None:
+        if self._cache['server'] is None:
             regex = re.compile(r'Server\s*version:\s*(\d+\.\d+\.\d+\S*)',
                                re.IGNORECASE)
             mobj = None
             for line in self.version_lines:
                 mobj = regex.search(line.strip())
                 if bool(mobj):
-                    self._server = mobj.group(1)
-        if self._server is None:
+                    self._cache['server'] = mobj.group(1)
+        if self._cache['server'] is None:
             self._oops('server version')
-        return self._server
+        return self._cache['server']
 
     def _split_client_server(self):
         # Split the raw string into client & server sections
@@ -113,41 +131,41 @@ class DockerVersion(object):
         """Read-only property that returns all lines in version table"""
         return self.version_string.splitlines()
 
+    def _lines(self, which):
+        if not self._cache[which]:
+            (self._cache['client_lines'],
+             self._cache['server_lines']) = self._split_client_server()
+        return self._cache[which]
+
     @property
     def client_lines(self):
         """
         Read-only property of split/stripped client section of version string
         """
-        if not self._client_lines:
-            (self._client_lines,
-             self._server_lines) = self._split_client_server()
-        return self._client_lines
+        return self._lines('client_lines')
 
     @property
     def server_lines(self):
         """
         Read-only property of split/stripped server section of version string
         """
-        if not self._server_lines:
-            (self._client_lines,
-             self._server_lines) = self._split_client_server()
-        return self._server_lines
+        return self._lines('server_lines')
 
     def _info(self, is_client, key):
         key = key.strip()
         if is_client:
-            infodict = self._client_info
+            infodict = self._cache['client_info']
             infolines = self.client_lines
         else:
-            infodict = self._server_info
+            infodict = self._cache['server_info']
             infolines = self.server_lines
         try:
             return infodict[key.strip().lower()]
         except TypeError:  # infodict == None
             if is_client:
-                self._client_info = {}
+                self._cache['client_info'] = {}
             else:
-                self._server_info = {}
+                self._cache['server_info'] = {}
             return self._info(is_client, key)
         except KeyError:  # infodict == empty
             if not infodict:
@@ -170,33 +188,32 @@ class DockerVersion(object):
         """Return item named 'key' from server section of version info table"""
         return self._info(False, key)
 
+    def _version(self, which):
+        if self._cache[which] is None:
+            try:
+                meth = getattr(self, '_old_%s' % which)
+                self._cache[which] = meth()
+            except DockerOutputError:
+                meth = getattr(self, "%s_info" % which)
+                self._cache[which] = meth('version')
+        if self._cache[which] is None:
+            self._oops('%s version' % which)
+        return self._cache[which]
+
     @property
     def client(self):
         """
         Read-only property representing version-number string of docker client
         """
-        if self._client is None:
-            try:
-                self._client = self._old_client()
-            except DockerOutputError:
-                self._client = self.client_info('version')
-        if self._client is None:
-            self._oops('client version')
-        return self._client
+        return self._version('client')
 
     @property
     def server(self):
         """
         Read-only property representing version-number string of docker server
         """
-        if self._server is None:
-            try:
-                self._server = self._old_server()
-            except DockerOutputError:
-                self._server = self.server_info('version')
-        if self._server is None:
-            self._oops('server version')
-        return self._server
+        return self._version('server')
+
 
     @staticmethod
     def _require(wanted, name, other_version):
@@ -236,7 +253,7 @@ class DockerVersion(object):
         bz1097344 and docker PR14012. If we see an exit code of 125 here,
         assume we're using the new docker.
         """
-        if self._has_distinct_exit_codes is None:
+        if self._cache['has_distinct_exit_codes'] is None:
             try:
                 # docker-1.10 *must* support distinct exit codes
                 self.require_client('1.10')
@@ -246,5 +263,5 @@ class DockerVersion(object):
                 d_run = utils.run('docker run --invalid-opt invalid-image',
                                   ignore_status=True)
                 has = (d_run.exit_status > 120)
-            DockerVersion._has_distinct_exit_codes = has
-        return DockerVersion._has_distinct_exit_codes
+            self._cache['has_distinct_exit_codes'] = has
+        return self._cache['has_distinct_exit_codes']
