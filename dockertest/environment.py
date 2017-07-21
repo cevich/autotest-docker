@@ -9,6 +9,8 @@ Low-level/standalone host-environment handling/checking utilities/classes/data
 
 import warnings
 import subprocess
+from collections import Mapping
+from collections import namedtuple
 # N/B: This module is automaticly generated from libselinux, so the
 # python docs are terrible.  The C library man(3) pages provided by
 # the 'libselinux-devel' RPM package (or equivilent) are much better.
@@ -91,3 +93,95 @@ def docker_rpm():
     """
     cmd = "rpm -q %s" % which_docker()
     return subprocess.check_output(cmd, shell=True).strip()
+
+
+class RPMS(Mapping):
+    """
+    Read-only mapping of rpm names to ``nvra_type`` instances
+
+    :param args: Same as standard ``dict()`` positional arguments.
+    :param dargs: Same as standard ``dict()`` keyword arguments.
+    """
+
+    #: Class to use for representing nvra values, the first index
+    #: must be the package name.
+    nvra_type = namedtuple('nvra_type',
+                           ('name', 'version', 'release', 'arch'))
+    nvra_len = len(nvra_type._fields)
+
+    #: Query command to use for looking up a package NVRA must
+    #: return line-delimited items of hash-delimited fields
+    #: suitable for initializing ``nvra_type``.
+    rpmcmd = ("/usr/bin/rpm", "-q", "--qf", '%{N}#%{V}#%{R}#%{ARCH}\n')
+
+    #: Callable to use for executing rpmcmd
+    execute = staticmethod(subprocess.check_output)
+
+    #: Private, do not use
+    _cache = None
+    _alldone = None
+
+    def __new__(cls, *args, **dargs):
+        del args, dargs  # not used
+        if cls._cache is None:
+            cls.flush()
+        return object.__new__(cls)
+
+    def __init__(self, *args, **dargs):
+        # Support dict API
+        if not self._cache and (args or dargs):
+            argtest = dict(*args, **dargs)
+            for key, value in argtest.iteritems():
+                try:
+                    self._cache[key] = self.nvra_type(*value)
+                except TypeError:
+                    raise TypeError("Initializer key %s's value %s"
+                                    " incompatible with %s"
+                                    % (key, value, self.nvra_type))
+
+    @classmethod
+    def _store(cls, name):
+        cmd = list(cls.rpmcmd) + [name]
+        xcept_fmt = ("%s did not return expected line-delimited"
+                     " items of hash-delimited fields as"
+                     " output: %s")
+        output = cls.execute(cmd)
+        for value in output.strip().splitlines():
+            # Use a field-delimiter incompatible with any field value
+            new_nvra = cls.nvra_type(*value.strip().split('#'))
+            if len(new_nvra) != cls.nvra_len:
+                raise ValueError(xcept_fmt % (' '.join(cmd), output))
+            new_name = new_nvra[0]  # documented in class attr. defs. above
+            cls._cache[new_name] = new_nvra
+
+    @classmethod
+    def __getitem__(cls, key):
+        # Don't allow passing arguments to query directly
+        if not key.startswith('-') and key not in cls._cache:
+            cls._store(key)
+        return cls._cache[key]
+
+    @classmethod
+    def fill(cls, method_name=None):
+        """
+        Query and cache details from all packages
+
+        :param method_name: Optional, return cache method with this name
+        """
+        if not cls._alldone:
+            cls._store('-a')  # This is going to take a long while
+            cls._alldone = True
+        if method_name:
+            return getattr(cls._cache, method_name)
+
+    # All of these require a full query
+    __iter__ = classmethod(lambda cls: cls.fill('__iter__')())
+    __len__ = classmethod(lambda cls: cls.fill('__len__')())
+    __contains__ = classmethod(lambda cls, item:
+                               cls.fill('__contains__')(item))
+
+    @classmethod
+    def flush(cls):
+        """Flush cache of RPM NVRAs to force fresh queries on access"""
+        cls._cache = dict()
+        cls._alldone = False
