@@ -3,7 +3,7 @@
 # Pylint runs from a different directory, it's fine to import this way
 # pylint: disable=W0403
 
-import unittest
+import unittest2
 
 class FakeCheckOutput(object):
 
@@ -42,7 +42,7 @@ class FakeCheckOutput(object):
         self.name = None
 
 
-class TestRPMS(unittest.TestCase):
+class TestRPMS(unittest2.TestCase):
 
     def setUp(self):
         from dockertest import environment
@@ -119,5 +119,65 @@ class TestRPMS(unittest.TestCase):
             self.environment.RPMS.nvra_type = original_type
 
 
+class TestCanonicalDistro(unittest2.TestCase):
+
+    def setUp(self):
+        from dockertest import environment
+        self.CanonicalDistro = environment.CanonicalDistro
+
+    def test_bad_distros(self):
+        orig_distros = self.CanonicalDistro.distros
+        try:
+            self.CanonicalDistro.distros = ('foo', 'bar', 'baz')
+            self.assertRaisesRegex(AttributeError, '\W+foo\W+', self.CanonicalDistro)
+            self.assertRaisesRegex(TypeError, '2 given',
+                                   self.CanonicalDistro, *('foo', 'bar'))
+            self.assertRaisesRegex(TypeError, '3 given',
+                                   self.CanonicalDistro,
+                                   *('foo', 'bar'), **dict(baz="none"))
+            self.assertRaisesRegex(TypeError, 'foobar',
+                                   self.CanonicalDistro, **dict(foobar=None))
+        finally:
+            self.CanonicalDistro.distros = orig_distros
+
+    def test_override_lower(self):
+        orig_distros = self.CanonicalDistro.distros
+        orig_fedora = self.CanonicalDistro.fedora
+        orig_rhel = self.CanonicalDistro.rhel
+        try:
+            self.CanonicalDistro.distros = ('fedora', 'rhel')
+            override = 'ThIS will BeCoMe LOWER CASE'
+            # Verify order doesn't matter WRT test_autodetect_lower()
+            self.CanonicalDistro.fedora = staticmethod(lambda _: "")
+            self.CanonicalDistro.rhel = staticmethod(lambda _: overrides.upper())
+            via_args = self.CanonicalDistro(override)
+            via_dargs = self.CanonicalDistro(object=override)
+            self.assertEqual(via_args, override.lower())
+            self.assertEqual(via_dargs, via_args)
+        finally:
+            self.CanonicalDistro.distros = orig_distros
+            self.CanonicalDistro.fedora = orig_fedora
+            self.CanonicalDistro.rhel = orig_rhel
+
+    def test_autodetect_lower(self):
+        orig_distros = self.CanonicalDistro.distros
+        orig_fedora = self.CanonicalDistro.fedora
+        orig_rhel = self.CanonicalDistro.rhel
+        try:
+            self.CanonicalDistro.distros = ('fedora', 'rhel')
+            distroname = 'ThIS will BeCoMe LOWER CASE'
+            # Verify order doesn't matter WRT test_override_lower()
+            self.CanonicalDistro.fedora = staticmethod(lambda _: distroname)
+            # Same for "" vs None
+            self.CanonicalDistro.rhel = staticmethod(lambda _: None)
+            candist = self.CanonicalDistro()
+            self.assertEqual(candist, distroname.lower())
+            self.assertDictEqual(candist.matches, {'fedora': distroname.lower()})
+        finally:
+            self.CanonicalDistro.distros = orig_distros
+            self.CanonicalDistro.fedora = orig_fedora
+            self.CanonicalDistro.rhel = orig_rhel
+
+
 if __name__ == '__main__':
-    unittest.main()
+    unittest2.main()

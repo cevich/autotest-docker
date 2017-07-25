@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+
 """
 Low-level/standalone host-environment handling/checking utilities/classes/data
 
@@ -185,3 +186,105 @@ class RPMS(Mapping):
         """Flush cache of RPM NVRAs to force fresh queries on access"""
         cls._cache = dict()
         cls._alldone = False
+
+
+class CanonicalDistro(str):
+
+    """
+    Represents a canonical/standardized name for the OS distribution
+
+    :param object: Optional, same as ``str()`` built in.  If non-empty,
+                   take ``str(object`` as the definitive distro. name,
+                   bypassing automatic detection.
+    """
+
+    #: Ordered list of class-method names to use for distro-detection.
+    #: Each takes a dictionary representing the current detection state
+    #: (See as ``matches`` below), and is expected to return
+    #: a string representing the detected distro. name, None, or ''.
+    distros = ("fedora", "rhel", "centos")
+
+    #: Mapping of distro names to lower-case distro-method result strings
+    #: if auto-detection was used (i.e. no initialization arguments passed)
+    matches = None
+
+    def __new__(cls, *args, **dargs):
+        _object = cls._handle_object(*args, **dargs)
+        if _object:
+            return super(CanonicalDistro, cls).__new__(cls, str(_object).lower())
+        else:
+            _matches = cls.investigate()
+            distro_matches = set(_matches.values())
+            if len(distro_matches) > 1:
+                raise ValueError("Multiple distros detected: %s" % _matches)
+            elif len(distro_matches) != 1:
+                raise ValueError("No distros detected: %s" % _matches)
+
+            # immutables can't rely on __init__(), it must be done here
+            new_cd = super(CanonicalDistro, cls).__new__(cls, distro_matches.pop())
+            new_cd.matches = _matches  # __init__ can't handle this
+            return new_cd
+
+    @classmethod
+    def _handle_object(cls, *args, **dargs):
+        # Sigh, the str() builtin really does use a parameter named 'object' :_(
+        # Deal with this here, so __new__ only needs to worry about
+        # an optional string initialization parameter.
+        if len(args) > 1 or len(dargs) > 1:
+            raise TypeError("__init__() takes at most 1 argument (%d given)"
+                            % (len(args) + len(dargs)))
+        elif len(dargs) == 1:
+            if 'object' in dargs:
+                _object = dargs['object']
+            else:
+                raise TypeError("__init__() got unexpected keyword argument %s"
+                                % dargs.popitem()[0])
+        elif len(args) == 1:
+            _object = args[0]
+        else:
+            _object = ''  # default
+        return _object
+
+    @classmethod
+    def investigate(cls):
+        """
+        Return mapping of distro names to distro class-method results.
+        """
+        _matches = {}
+        for distro in cls.distros:
+            distro_match = getattr(cls, distro)
+            match = str(distro_match(_matches.copy())).lower()
+            if match in ('', 'none'):
+                continue
+            _matches[distro] = match
+        return _matches
+
+    # Method names must exactly match the cls.distros list.
+    # Called in order defined by cls.distros list.
+    # Use/Modification of ``matches`` argument is optional.
+    # Each must return a string, that will update ``matches`` for that distro.
+
+    @staticmethod
+    def fedora(matches):
+        del matches  # Optional, not used here
+        return None
+
+    @staticmethod
+    def rhel(matches):
+        del matches  # Optional, not used here
+        return None
+
+    @staticmethod
+    def centos(matches):
+        del matches  # Optional, not used here
+        return None
+
+    # General instance helper/convenience methods
+
+    def is_atomic(self):
+        """STUB"""
+        return 'atomic' in self
+
+    def is_enterprise(self):
+        """STUB"""
+        return 'rhel' in self or 'centos' in self
