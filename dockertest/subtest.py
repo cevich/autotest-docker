@@ -12,6 +12,7 @@ loading the specified configuration section (see `configuration module`_)
 # pylint: disable=W0403
 
 import tempfile
+import os
 import os.path
 import imp
 import sys
@@ -19,6 +20,7 @@ import copy
 from ConfigParser import Error
 from autotest.client.shared.error import TestError, TestNAError
 from autotest.client.shared.version import get_version
+from autotest.client.utils import run
 from autotest.client import test
 import version
 import config
@@ -195,6 +197,57 @@ class Subtest(subtestbase.SubBase, test.test):
         Same as ``control_config()`` but for [Bugzilla] section (if exists)
         """
         return self._control_ini_section('Bugzilla')
+
+
+class BashSubtest(Subtest):
+
+    """
+    Simple-minded subtest base-class using scripts for each phase.
+    """
+
+    def execute(self, iterations=None, test_length=None, profile_only=None,
+                _get_time=None, postprocess_profiled_run=None,
+                constraints=(), *args, **dargs):
+        """Setup and teardown special environment for all stages"""
+        try:
+            self.stuff['original_env'] = os.environ
+            os.environ.update(self.config)
+            os.environ['TMPDIR'] = self.tmpdir
+            os.chdir(self.resultsdir)
+            super(BashSubtest, self).execute(iterations, test_length,
+                                             profile_only, _get_time,
+                                             postprocess_profiled_run,
+                                             constraints, *args, **dargs)
+        finally:
+            if "original_env" in self.stuff:
+                os.environ.clear()
+                os.environ.update(self.stuff['original_env'])
+
+    def initialize(self):
+        """Call initialize.sh, throw TestNAError on non-zero exit"""
+        try:
+            run(os.path.join(self.bindir, 'initialize.sh'),
+                stderr_is_expected=True,
+                ignore_status=True)
+        # Catching general exception to allow logging
+        # logging details before skipping this test.
+        # pylint: disable=W0703
+        except Exception, detail:
+            self.logtraceback(self.config_section, sys.exc_info(),
+                              "initialize", detail)
+            raise DockerTestNAError("Exception thrown during initialize,"
+                                    " skipping test")
+
+    def run_once(self):
+        """Call run_once.sh, fail test on non-zero exit"""
+        run(os.path.join(self.bindir, 'run_once.sh'),
+            stderr_is_expected=True)
+
+    def cleanup(self):
+        """Call cleanup.sh, ignore any non-zero exit"""
+        run(os.path.join(self.bindir, 'cleanup.sh'),
+            stderr_is_expected=True,
+            ignore_status=True)
 
 
 class SubSubtest(subtestbase.SubBase):
