@@ -240,7 +240,7 @@ class BashSubtest(Subtest):
 
     def run_once(self):
         """Call run_once.sh, fail test on non-zero exit"""
-        run(os.path.join(self.bindir, 'run_once.sh'),
+        run(os.path.join(self.bindir, 'run.sh'),
             stderr_is_expected=True)
 
     def cleanup(self):
