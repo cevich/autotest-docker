@@ -18,7 +18,7 @@ import imp
 import sys
 import copy
 from ConfigParser import Error
-from autotest.client.shared.error import TestError, TestNAError
+from autotest.client.shared.error import TestError, TestNAError, CmdError
 from autotest.client.shared.version import get_version
 from autotest.client.utils import run
 from autotest.client import test
@@ -205,49 +205,41 @@ class BashSubtest(Subtest):
     Simple-minded subtest base-class using scripts for each phase.
     """
 
-    def execute(self, iterations=None, test_length=None, profile_only=None,
-                _get_time=None, postprocess_profiled_run=None,
-                constraints=(), *args, **dargs):
-        """Setup and teardown special environment for all stages"""
-        try:
-            self.stuff['original_env'] = os.environ
-            os.environ.update(self.config)
-            os.environ['TMPDIR'] = self.tmpdir
-            os.chdir(self.resultsdir)
-            super(BashSubtest, self).execute(iterations, test_length,
-                                             profile_only, _get_time,
-                                             postprocess_profiled_run,
-                                             constraints, *args, **dargs)
-        finally:
-            if "original_env" in self.stuff:
-                os.environ.clear()
-                os.environ.update(self.stuff['original_env'])
-
     def initialize(self):
         """Call initialize.sh, throw TestNAError on non-zero exit"""
+        super(BashSubtest, self).initialize()
+        os.environ.update(self.config)
+        os.environ['TMPDIR'] = self.tmpdir
+        # Don't make entire subtest module depend on images module
+        from images import DockerImages
+        os.environ['default_fqin'] = DockerImages(self).default_image
+        os.chdir(self.resultsdir)
         try:
-            run(os.path.join(self.bindir, 'initialize.sh'),
-                stderr_is_expected=True,
-                ignore_status=True)
-        # Catching general exception to allow logging
-        # logging details before skipping this test.
-        # pylint: disable=W0703
-        except Exception, detail:
+            cmdresult = run(os.path.join(self.bindir, 'initialize.sh'),
+                            stderr_is_expected=True)
+            self.logdebug(cmdresult)
+        except CmdError, detail:
             self.logtraceback(self.config_section, sys.exc_info(),
                               "initialize", detail)
             raise DockerTestNAError("Exception thrown during initialize,"
                                     " skipping test")
 
     def run_once(self):
-        """Call run_once.sh, fail test on non-zero exit"""
-        run(os.path.join(self.bindir, 'run.sh'),
-            stderr_is_expected=True)
+        """Call run.sh, fail test on non-zero exit"""
+        super(BashSubtest, self).run_once()
+        os.chdir(self.resultsdir)
+        cmdresult = run(os.path.join(self.bindir, 'run.sh'),
+                        stderr_is_expected=True)
+        self.logdebug(cmdresult)
 
     def cleanup(self):
         """Call cleanup.sh, ignore any non-zero exit"""
-        run(os.path.join(self.bindir, 'cleanup.sh'),
-            stderr_is_expected=True,
-            ignore_status=True)
+        super(BashSubtest, self).cleanup()
+        os.chdir(self.resultsdir)
+        cmdresult = run(os.path.join(self.bindir, 'cleanup.sh'),
+                        stderr_is_expected=True,
+                        ignore_status=True)
+        self.logdebug(cmdresult)
 
 
 class SubSubtest(subtestbase.SubBase):
