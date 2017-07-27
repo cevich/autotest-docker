@@ -25,9 +25,9 @@ This shell-based example test does not require anything other than
 Autotest, Docker autotest, this file and three shell-shell scripts.
 """
 
-from dockertest import BashSubtest
+from dockertest.subtest import BashSubtest
 
-class bashexample(subtest.BashSubtest):
+class bashexample(BashSubtest):
     """
     Call out to ``initialize.sh``, ``run.sh`` and ``cleanup.sh``.
 
