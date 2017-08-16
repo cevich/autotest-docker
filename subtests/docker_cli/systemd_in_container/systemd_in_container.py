@@ -19,6 +19,7 @@ Specifically docker 1.12 is needed for dockerd and containerd.
 
 from os.path import join
 from autotest.client.utils import run
+from dockertest.config import get_as_list
 from dockertest import subtest
 from dockertest.images import DockerImages
 from dockertest.output.validate import mustpass
@@ -27,24 +28,39 @@ from dockertest.output.dockerversion import DockerVersion
 
 class systemd_in_container(subtest.Subtest):
 
+    # Execute this many times, with #0 being the default test image
+    iterations = 1
+
     def initialize(self):
         # See Prerequisites (above)
         DockerVersion().require_server("1.12")
         self.stuff['result'] = None
         self.stuff['di'] = DockerImages(self)
+        self.stuff['fqins'] = [self.stuff['di'].default_image]
+        if self.iterations > 1:
+            fqins_to_test += get_as_list(fqins_to_test)
         super(systemd_in_container, self).initialize()
 
     def run_once(self):
         super(systemd_in_container, self).run_once()
+        # First item is always the default test image
+        fqin = self.stuff['fqins'][self.iteration - 1]
+
         # Assumes script exits non-zero on test-failure and
         # cleans up any/all containers/images it created
         result = run("%s %s"
                      % (join(self.bindir, 'test.sh'),
-                        self.stuff['di'].default_image),
+                        fqin),
                      ignore_status=True)
         self.logdebug(str(result))
         self.stuff['result'] = result
 
-    def postprocess(self):
-        super(systemd_in_container, self).postprocess()
+    def postprocess_iteration(self):
+        super(systemd_in_container, self).postprocess_iteration()
         mustpass(self.stuff['result'])
+
+# A little bit of magic to configure the class when fqins_to_test is set
+config = Config()['docker_cli/systemd_in_container']
+fqins_to_test = config.get('fqins_to_test')
+if fqins_to_test and get_as_list(fqins_to_test):
+    systemd_in_container.iterations = len(get_as_list(fqins_to_test)) + 1
