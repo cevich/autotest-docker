@@ -21,6 +21,7 @@ from os.path import join
 from autotest.client.utils import run
 from dockertest.config import get_as_list
 from dockertest import subtest
+from dockertest.config import Config
 from dockertest.images import DockerImages
 from dockertest.output.validate import mustpass
 from dockertest.output.dockerversion import DockerVersion
