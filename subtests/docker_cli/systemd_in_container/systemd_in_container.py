@@ -39,12 +39,12 @@ class systemd_in_container(subtest.Subtest):
         self.stuff['di'] = DockerImages(self)
         self.stuff['fqins'] = [self.stuff['di'].default_image]
         if self.iterations > 1:
-            fqins_to_test += get_as_list(fqins_to_test)
+             self.stuff['fqins'] += get_as_list(config.get('fqins_to_test',''))
         super(systemd_in_container, self).initialize()
 
     def run_once(self):
         super(systemd_in_container, self).run_once()
-        # First item is always the default test image
+        # First item is always the default test image, counting starts at 1
         fqin = self.stuff['fqins'][self.iteration - 1]
 
         # Assumes script exits non-zero on test-failure and
@@ -62,6 +62,7 @@ class systemd_in_container(subtest.Subtest):
 
 # A little bit of magic to configure the class when fqins_to_test is set
 config = Config()['docker_cli/systemd_in_container']
-fqins_to_test = config.get('fqins_to_test')
-if fqins_to_test and get_as_list(fqins_to_test):
-    systemd_in_container.iterations = len(get_as_list(fqins_to_test)) + 1
+fqins_to_test = get_as_list(config.get('fqins_to_test',''))
+if fqins_to_test:
+    systemd_in_container.fqins_to_test
+    systemd_in_container.iterations = len(fqins_to_test) + 1  # default image
