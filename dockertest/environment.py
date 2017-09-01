@@ -288,3 +288,98 @@ class CanonicalDistro(str):
     def is_enterprise(self):
         """STUB"""
         return 'rhel' in self or 'centos' in self
+
+
+class RDFilter(Mapping):
+
+    """
+    Filter-map storage type for RPM NVRAs and CanonicalDistro strings
+
+    :param args: Same meaning as for ``dict()``
+    :param dargs: Same meaning as for ``dict()``
+    """
+
+    # Internal storage, do not use
+    _mapping = None
+
+    #: Class required for nvra keys, expected to be compatible
+    #: with the RPM class.  If all fields are "", only
+    #: a distro. match will be considered.
+    nvra_type = RPMs.nvra_type
+
+    #: Set of acceptable distro-list values.  Where
+    #: ``None`` value matches the nvra key on any distro.
+    acceptable_distros = set(CanonicalDistro.distros) + set([None])
+
+    def __new__(cls, *args, **dargs):
+        if args or dargs:
+            argtest = dict(*args, **dargs)
+            for nvra, distros in argtest.iteritems():
+                if not isinstance(nvra, cls.nvra_type)
+                    raise ValueError("Initializer key '%s' is not a"
+                                     " '%s' or subclass." % (nvra, cls.nvra_type))
+                for distro in distros:
+                    if distro not in cls.acceptable_distros:
+                        raise ValueError("Initializer key '%s' value '%s', is"
+                                         " not in '%s'."
+                                         % (nvra, distro, cls.acceptable_values))
+        return super(Mapping, cls).__new__(*args, **dargs)
+
+    def __init__(self, *args, **dargs):
+        # N/B: Instances are immutable!
+        self._mapping = dict(*args, **dargs)
+
+    # Simply query internal storage to fill out ABC requirements
+    __getitem__ = lambda self, key: self._mapping.__getitem__(key)
+    __iter__ = lambda self: self._mapping.__iter__()
+    __len__ = lambda self: self._mapping.__len__()
+    __contains__ = lambda self, key: self._mapping.__contains__(key)
+
+    @classmethod
+    def from_csv(cls, nvra_distro_csv, nvra_delim=';', sub_delim='#'):
+        """
+        Return a new instance produced by parsing rpm_distro_csv.
+
+        :param nvra_distro_csv: A CSV list of ``delimiter`` separated key/value
+                                pairs.  Keys must be acceptable ``cls.nvra_type``
+                                initializers.  Values must be in
+                                ``cls.acceptable_values``.
+        # FIXME: More docs  (delims must never be valid distro or rpm names)
+        """
+        # count ; in "name;version;release;arch" the most complicated way possible
+        n_nvra_delim = len(cls.nvra_type._fields) -1
+        # Prune empty values and values w/o required delimiters
+        is_valid = lambda val: (val.strip() and
+                                val.find(nvra_delim) == n_nvra_delim and
+                                val.find(sub_delim) == 1)
+        # Dict-like's can be initialized from lists of key,value tuples
+        nvra_distros = [sub_val.split(delimiter, 1)
+                        for sub_val in [val.strip()
+                                        for val in rpm_distro_csv.split(',')
+                                        if is_valid(val)]]
+        # Catch eval() exceptions here instead of in __new__
+        try:
+            # Given nt = cls.nvra_type
+            #
+            # from_csv("foobar;42;;#fedora,baz;;;#rhel,;;;i386")
+            #
+            # returns
+            #
+            # [(nt('foobar', '42', '', ''), 'fedora'),
+            #  (nt('baz', '', '', ''), 'rhel'),
+            #  (nt('','','',''), 'i386')]
+            #
+            args = [(eval('cls.nvra_type(*%s)' % k.split(nvra_delim, n_nvra_delim)), str(v))
+                    for k, v in nvra_distros]
+        except TypeError:
+            raise TypeError("Error instantiating %s(%s): %s"
+                            % (cls.nvra_type))  # FIXME: finish this
+        # __new__ does final value validation
+        return cls(*args)
+
+    def fail_if_nvra_or_distro(self, extra_msg='', exception=RuntimeError):
+        """
+        Raise exception on distro and/or rpm nvra match w/ details + extra_msg
+        """
+        # Walk self.iteritems(), toss exception if match found
+        pass # STUB
