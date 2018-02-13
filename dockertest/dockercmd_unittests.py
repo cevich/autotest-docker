@@ -84,10 +84,12 @@ class FakeDockerVersion(object):
     def has_distinct_exit_codes():
         return False
 
-
+run_term_was = None  # CmdResult/FakeCmdResult cannot store new values
 def run(command, *args, **dargs):
     """ Don't actually run anything! """
     result = FakeCmdResult(command=command, args=args, dargs=dargs)
+    global run_term_was
+    run_term_was = os.environ.get("TERM")
     if 'unittest_fail' in command:
         result.exit_status = 1
         if not dargs['ignore_status']:
@@ -199,8 +201,16 @@ class DockerCmdTestBase(unittest.TestCase):
         self._setup_defaults()
         self._setup_customs()
         self.fake_subtest = self._make_fake_subtest()
+        self._prev_term = os.environ.get("TERM")
+        global run_term_was
+        run_term_was = None
+
 
     def tearDown(self):
+        if self._prev_term:
+            os.environ["TERM"] = self._prev_term
+        elif "TERM" in os.environ:
+            del os.environ["TERM"]
         shutil.rmtree(self.config.CONFIGDEFAULT, ignore_errors=True)
         shutil.rmtree(self.config.CONFIGCUSTOMS, ignore_errors=True)
         self.assertFalse(os.path.isdir(self.config.CONFIGDEFAULT))
@@ -221,7 +231,7 @@ class DockerCmdTestBase(unittest.TestCase):
 class DockerCmdTestBasic(DockerCmdTestBase):
 
     defaults = {'docker_path': '/foo/bar', 'docker_options': '--not_exist',
-                'docker_timeout': "42.0"}
+                'docker_timeout': "42.0", 'docker_dumb': 'yes' }
     customs = {}
     config_section = "Foo/Bar/Baz"
 
@@ -258,9 +268,11 @@ class DockerCmdTestBasic(DockerCmdTestBase):
         self.assertTrue(docker_command.command in expected)
         self.assertTrue(expected in str(docker_command))
         self.assertTrue(docker_command.cmdresult is None)
+        self.assertTrue(docker_command.dumb)
         cmdresult = docker_command.execute()
         self.assertTrue(docker_command.cmdresult is not None)
         self.assertTrue(cmdresult.command in expected)
+        self.assertEqual(run_term_was, "dumb")
         # mocked cmdresult has '.dargs' pylint: disable=E1101
         self.assertAlmostEqual(cmdresult.duration, 123)
         # pylint: enable=E1101
@@ -301,14 +313,16 @@ class DockerCmdTestBasic(DockerCmdTestBase):
 
 class AsyncDockerCmd(DockerCmdTestBase):
     defaults = {'docker_path': '/foo/bar', 'docker_options': '--not_exist',
-                'docker_timeout': "42.0"}
+                'docker_timeout': "42.0", 'docker_dumb': 'no'}
     customs = {}
     config_section = "Foo/Bar/Baz"
 
     def test_basic_workflow(self):
+        os.environ["TERM"] = 'test value'
         docker_cmd = self.dockercmd.AsyncDockerCmd(self.fake_subtest,
                                                    'fake_subcommand',
                                                    timeout=123)
+        self.assertTrue(not docker_cmd.dumb)
 
         # Raise error when command not yet executed
         self.assertRaises(self.dockercmd.DockerTestError, docker_cmd.wait)
@@ -317,7 +331,9 @@ class AsyncDockerCmd(DockerCmdTestBase):
                               getattr, docker_cmd, prop)
 
         cmdresult = docker_cmd.execute()
+
         self.assertTrue(isinstance(cmdresult, FakeCmdResult))
+        self.assertEqual(run_term_was, "test value")
         self.assertEqual(docker_cmd.wait(123).duration, 123)
 
         # Exercize timeout w/o mocking time.time

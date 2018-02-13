@@ -6,6 +6,7 @@ Frequently used docker CLI operations/data
 # Pylint runs from a different directory, it's fine to import this way
 # pylint: disable=W0403
 
+import os
 import time
 from autotest.client import utils
 from subtestbase import SubBase
@@ -43,6 +44,9 @@ class DockerCmdBase(object):
     #: Silence all logging messages
     quiet = False
 
+    #: Set $TERM=dumb when executing the docker command
+    dumb = None
+
     def __init__(self, subtest, subcmd, subargs=None, timeout=None,
                  verbose=True):
         self._cmdresult = None
@@ -74,6 +78,14 @@ class DockerCmdBase(object):
             # config() autoconverts otherwise catch non-float convertable
             self.timeout = float(timeout)
         self.verbose = verbose
+        self._prev_term = os.environ.get("TERM")  # maybe restore_term() before handle
+
+    @property
+    def dumb(self):
+        """
+        True/False if $TERM=dumb should be set or not before command execution
+        """
+        return self.subtest.config.get('docker_dumb', False)
 
     @property
     def details(self):
@@ -85,7 +97,8 @@ class DockerCmdBase(object):
         dct = {'to': self.timeout,
                'suba': self.subargs,
                'subc': self.subcmd,
-               'verb': self.verbose}
+               'verb': self.verbose,
+               'dumb': self.dumb}
 
         if self.cmdresult is not None:
             dct['cmd'] = self.cmdresult.command
@@ -114,11 +127,31 @@ class DockerCmdBase(object):
             fmt = ("Command: %(cmd)s\n"
                    "Timeout: %(to)s\n"
                    "Duration: %(dur)s\n"
+                   "Dumb Terminal: %(dumb)s\n"
                    "Exit code: %(exit)s\n"
                    # Make whitespace in output clearly visible
                    "Standard Out: \"\"\"%(out)s\"\"\"\n"
                    "Standard Error: \"\"\"%(err)s\"\"\"\n")
         return fmt % self.details
+
+    def handle_dumb_term(self):
+        """
+        Set $TERM="dumb" if configured, else enforce pre-existing $TERM value
+        """
+        if self.dumb:
+            self._prev_term = os.environ.get("TERM")  # None == $TERM not set
+            os.environ["TERM"] = "dumb"
+        else:
+            self.restore_term()
+
+    def restore_term(self):
+        """
+        Set $TERM to pre-existing value (including undefined).
+        """
+        if self._prev_term:
+            os.environ["TERM"] = self._prev_term
+        elif "TERM" in os.environ:  # $TERM was not set
+            del os.environ["TERM"]
 
     def execute(self, stdin):  # pylint: disable=R0201
         """
@@ -281,9 +314,11 @@ class DockerCmd(DockerCmdBase):  # pylint: disable=R0903
             str_stdin = ""
         if self.verbose:
             self.subtest.logdebug("Executing %s%s", str(self), str_stdin)
+        self.handle_dumb_term()
         self.cmdresult = utils.run(self.command, timeout=self.timeout,
                                    stdin=stdin, verbose=False,
                                    ignore_status=True)
+        self.restore_term()
         # Return value, not reference
         return self.cmdresult
 
@@ -320,8 +355,10 @@ class AsyncDockerCmd(DockerCmdBase):
             str_stdin = ""
         if self.verbose:
             self.subtest.logdebug("Async-execute: %s%s", str(self), str_stdin)
+        self.handle_dumb_term()
         self._async_job = utils.AsyncJob(self.command, verbose=False,
                                          stdin=stdin, close_fds=True)
+        self.restore_term()
         return self.cmdresult
 
     def wait_for_ready(self, cid=None, timeout=None, timestep=0.2):
