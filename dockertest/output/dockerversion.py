@@ -214,7 +214,6 @@ class DockerVersion(object):
         """
         return self._version('server')
 
-
     @staticmethod
     def _require(wanted, name, other_version):
         required_version = LooseVersion(wanted)
