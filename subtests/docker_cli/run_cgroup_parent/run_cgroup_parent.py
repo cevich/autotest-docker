@@ -190,7 +190,10 @@ class run_cgroup_parent_path(run_cgroup_parent_base):
     def initialize(self):
         super(run_cgroup_parent_path, self).initialize()
         self._setup("{rand1}.slice")
-        self._expect(path="/{rand1}.slice/docker-{cid}.scope")
+        expect = "/{rand1}.slice/docker-{cid}.scope"
+        if DockerVersion().is_podman:
+            expect = "/{rand1}.slice/libpod-conmon-{cid}/{cid}"
+        self._expect(path=expect)
 
 
 class run_cgroup_parent_path_with_hyphens(run_cgroup_parent_base):

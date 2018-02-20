@@ -56,24 +56,28 @@ check_label() {
 }
 
 # Actual checks
-check_label "docker-containerd" \
-            "ps axZ | grep docker-containerd | grep -v grep" \
-            "container_runtime_t" "docker_t"
 
-check_label "dockerd" \
-            "ps axZ | grep dockerd | grep -v grep" \
-            "container_runtime_t" "docker_t"
+# dockerd and docker-containerd tests N/A when testing podman
+if ! docker version | grep -q podman-V-R; then
+    check_label "docker-containerd" \
+                "ps axZ | grep docker-containerd | grep -v grep" \
+                "container_runtime_t" "docker_t"
+
+    check_label "dockerd" \
+                "ps axZ | grep dockerd | grep -v grep" \
+                "container_runtime_t" "docker_t"
+fi
 
 check_label "confined container" \
             "docker run --rm $image cat /proc/self/attr/current" \
             "container_t" "svirt_lxc_net_t"
 
-check_label "container with label:disable" \
-            "docker run --rm --security-opt label:disable $image cat /proc/self/attr/current" \
+check_label "container with label=disable" \
+            "docker run --rm --security-opt label=disable $image cat /proc/self/attr/current" \
             "spc_t"
 
 check_label "container with overriden type" \
-            "docker run --rm --security-opt label:type:svirt_qemu_net_t $image cat /proc/self/attr/current" \
+            "docker run --rm --security-opt label=type:svirt_qemu_net_t $image cat /proc/self/attr/current" \
             "svirt_qemu_net_t"
 
 check_label "privileged container" \
@@ -85,7 +89,7 @@ check_label "confined container: root dir" \
             "container_file_t" "svirt_sandbox_file_t"
 
 check_label "container with overridden range" \
-            "docker run --rm --security-opt label:level:s0:c1,c2 $image cat /proc/self/attr/current" \
+            "docker run --rm --security-opt label=level:s0:c1,c2 $image cat /proc/self/attr/current" \
             "s0:c1,c2"
 
 exit $rc
